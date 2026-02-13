@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_hbb/common.dart';
 import 'package:flutter_hbb/consts.dart';
 import 'package:flutter_hbb/desktop/pages/desktop_home_page.dart';
+// ===== SoDesk Studio Hook =====
+import 'package:flutter_hbb/studio/pages/studio_home_page.dart';
+// ===== End SoDesk Studio Hook =====
 import 'package:flutter_hbb/desktop/pages/desktop_setting_page.dart';
 import 'package:flutter_hbb/desktop/widgets/tabbar_widget.dart';
 import 'package:flutter_hbb/models/platform_model.dart';
@@ -49,8 +52,10 @@ class _DesktopTabPageState extends State<DesktopTabPage> {
         selectedIcon: Icons.home_sharp,
         unselectedIcon: Icons.home_outlined,
         closable: false,
-        page: DesktopHomePage(
+        // ===== SoDesk Studio Hook: 替换 DesktopHomePage =====
+        page: StudioHomePage(
           key: const ValueKey(kTabLabelHomePage),
+        // ===== End SoDesk Studio Hook =====
         )));
     if (bind.isIncomingOnly()) {
       tabController.onSelected = (key) {
