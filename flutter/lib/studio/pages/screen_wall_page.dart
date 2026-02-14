@@ -9,6 +9,8 @@ import '../widgets/device_picker_dialog.dart';
 import '../widgets/wall_cell_widget.dart';
 import '../widgets/wall_remote_view.dart';
 import '../widgets/wall_fullscreen_view.dart';
+import '../widgets/wall_toolbar.dart';
+import '../widgets/wall_status_bar.dart';
 
 class ScreenWallPage extends StatefulWidget {
   const ScreenWallPage({Key? key}) : super(key: key);
@@ -20,28 +22,16 @@ class ScreenWallPage extends StatefulWidget {
 class _ScreenWallPageState extends State<ScreenWallPage> {
   final ScreenWallController controller = Get.put(ScreenWallController());
   final _fullscreenIndex = (-1).obs;
-  final _remoteViewKeys = <int, GlobalKey<WallRemoteViewState>>{};
   final FocusNode _focusNode = FocusNode(debugLabel: 'screenWallPage');
 
-  GlobalKey<WallRemoteViewState> _getRemoteKey(int index) {
-    return _remoteViewKeys.putIfAbsent(
-        index, () => GlobalKey<WallRemoteViewState>());
-  }
-
-  /// Set of peer IDs currently connected in the wall.
-  Set<String> get _connectedPeerIds {
-    return controller.cells
-        .where((c) => !c.isEmpty)
-        .map((c) => c.peerId!)
-        .toSet();
-  }
+  /// Set of peer IDs currently connected in the wall (cached in controller).
+  Set<String> get _connectedPeerIds => controller.connectedPeerIds;
 
   Future<void> _onDeviceSelected(int index, String peerId, String peerName) async {
     await controller.connectCell(index, peerId, name: peerName);
   }
 
   Future<void> _onCellDisconnect(int index) async {
-    _remoteViewKeys.remove(index);
     await controller.disconnectCell(index);
   }
 
@@ -96,7 +86,10 @@ class _ScreenWallPageState extends State<ScreenWallPage> {
   @override
   void dispose() {
     _focusNode.dispose();
-    Get.delete<ScreenWallController>();
+    // Await async session cleanup before deleting the controller.
+    controller.sessionManager.disconnectAll().whenComplete(() {
+      Get.delete<ScreenWallController>();
+    });
     super.dispose();
   }
 
@@ -110,13 +103,11 @@ class _ScreenWallPageState extends State<ScreenWallPage> {
         // Fullscreen mode
         if (_fullscreenIndex.value >= 0) {
           final idx = _fullscreenIndex.value;
-          final key = _getRemoteKey(idx);
-          final cell = controller.cells[idx];
-          if (key.currentState != null) {
+          final session = controller.sessionManager.getSession(idx);
+          if (session != null &&
+              session.state.value == WallSessionState.connected) {
             return WallFullscreenView(
-              remoteViewState: key.currentState!,
-              peerId: cell.peerId ?? '',
-              peerName: cell.peerName ?? '',
+              session: session,
               onExit: _exitFullscreen,
             );
           }
@@ -126,9 +117,16 @@ class _ScreenWallPageState extends State<ScreenWallPage> {
           color: StudioTheme.primaryBg,
           child: Column(
             children: [
-              _buildToolbar(),
+              WallToolbar(
+                controller: controller,
+                onSelectNext: _selectNextConnected,
+                onDisconnectAll: () async {
+                  await controller.clearAll();
+                },
+                onRefresh: _refreshAll,
+              ),
               Expanded(child: _buildGrid()),
-              _buildStatusBar(),
+              WallStatusBar(controller: controller),
             ],
           ),
         );
@@ -136,51 +134,12 @@ class _ScreenWallPageState extends State<ScreenWallPage> {
     );
   }
 
-  Widget _buildToolbar() {
-    return Container(
-      height: 48,
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      decoration: const BoxDecoration(
-        color: StudioTheme.toolbarBg,
-        border: Border(bottom: BorderSide(color: StudioTheme.border, width: 1)),
-      ),
-      child: Obx(() {
-        final current = controller.layout.value;
-        final connected = controller.sessionManager.connectedCount;
-        final total = controller.totalSlots;
-        return Row(
-          children: [
-            _layoutBtn('2×2', WallLayout.grid2x2, current),
-            const SizedBox(width: 2),
-            _layoutBtn('3×3', WallLayout.grid3x3, current),
-            const SizedBox(width: 2),
-            _layoutBtn('4×4', WallLayout.grid4x4, current),
-            const SizedBox(width: 2),
-            _layoutBtn('自适应', WallLayout.adaptive, current),
-            const Spacer(),
-            Text(
-              '已连接 $connected/$total',
-              style: const TextStyle(color: StudioTheme.textSecondary, fontSize: 13),
-            ),
-            const Spacer(),
-            _actionBtn(Icons.select_all, '选择下一个', _selectNextConnected),
-            const SizedBox(width: 4),
-            _actionBtn(Icons.link_off, '断开所有', () async {
-              _remoteViewKeys.clear();
-              await controller.clearAll();
-            }),
-            const SizedBox(width: 4),
-            _actionBtn(Icons.refresh, '刷新', _refreshAll),
-          ],
-        );
-      }),
-    );
-  }
-
   void _selectNextConnected() {
-    // Select next non-empty, unselected cell (cycle through them)
-    for (var i = 0; i < controller.cells.length; i++) {
-      if (!controller.cells[i].isEmpty && !controller.cells[i].isSelected) {
+    final current = controller.selectedIndex.value;
+    final len = controller.cells.length;
+    for (var offset = 1; offset <= len; offset++) {
+      final i = (current + offset) % len;
+      if (!controller.cells[i].isEmpty) {
         controller.selectCell(i);
         return;
       }
@@ -188,103 +147,66 @@ class _ScreenWallPageState extends State<ScreenWallPage> {
   }
 
   void _refreshAll() {
-    // Reconnect all active sessions
     for (final entry in controller.sessionManager.sessions.entries) {
       entry.value.reconnect();
     }
   }
 
-  Widget _layoutBtn(String label, WallLayout value, WallLayout current) {
-    final selected = value == current;
-    return InkWell(
-      onTap: () => controller.setLayout(value),
-      borderRadius: BorderRadius.circular(6),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
-          color: selected ? StudioTheme.accentCyan.withOpacity(0.2) : Colors.transparent,
-          borderRadius: BorderRadius.circular(6),
-          border: Border.all(
-            color: selected ? StudioTheme.accentCyan : StudioTheme.btnBorderIdle,
-            width: 1,
-          ),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: selected ? StudioTheme.accentCyan : StudioTheme.btnTextIdle,
-            fontSize: 12,
-            fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _actionBtn(IconData icon, String tooltip, VoidCallback onPressed) {
-    return Tooltip(
-      message: tooltip,
-      child: InkWell(
-        onTap: onPressed,
-        borderRadius: BorderRadius.circular(6),
-        child: Container(
-          padding: const EdgeInsets.all(6),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(6),
-            border: Border.all(color: StudioTheme.border),
-          ),
-          child: Icon(icon, color: StudioTheme.textSecondary, size: 18),
-        ),
-      ),
-    );
-  }
-
   Widget _buildGrid() {
     return Obx(() {
+      // Outer Obx only reacts to layout changes (grid columns / total slots).
       final cols = controller.gridColumns;
       final total = controller.totalSlots;
       return Padding(
-        padding: const EdgeInsets.all(2),
+        padding: const EdgeInsets.all(StudioTheme.gridSpacing),
         child: GridView.builder(
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: cols,
-            crossAxisSpacing: 2,
-            mainAxisSpacing: 2,
+            crossAxisSpacing: StudioTheme.gridSpacing,
+            mainAxisSpacing: StudioTheme.gridSpacing,
             childAspectRatio: 16 / 9,
           ),
           itemCount: total,
           itemBuilder: (context, index) {
-            final cell = index < controller.cells.length
-                ? controller.cells[index]
-                : const ScreenWallCell();
-            final session = controller.sessionManager.getSession(index);
-            final isConnecting = session?.state.value == WallSessionState.connecting;
-            final isConnected = session?.state.value == WallSessionState.connected;
+            // Each cell has its own Obx — only rebuilds when this cell or
+            // selectedIndex changes.
+            return Obx(() {
+              final cell = index < controller.cells.length
+                  ? controller.cells[index]
+                  : const ScreenWallCell();
+              final session = controller.sessionManager.getSession(index);
+              final isConnecting =
+                  session?.state.value == WallSessionState.connecting;
+              final isConnected =
+                  session?.state.value == WallSessionState.connected;
 
-            return DragTarget<String>(
-              onAcceptWithDetails: (details) {
-                // Accept peer ID dropped from device tree
-                _onDeviceSelected(index, details.data, details.data);
-              },
-              builder: (context, candidateData, rejectedData) {
-                final isDragOver = candidateData.isNotEmpty;
-                return GestureDetector(
-                  onSecondaryTapUp: (details) {
-                    _showCellContextMenu(context, index, cell, details.globalPosition);
-                  },
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 150),
-                    decoration: isDragOver
-                        ? BoxDecoration(
-                            border: Border.all(color: StudioTheme.accentCyan, width: 2),
-                            borderRadius: BorderRadius.circular(4),
-                          )
-                        : null,
-                    child: _buildCellContent(index, cell, isConnecting, isConnected),
-                  ),
-                );
-              },
-            );
+              return DragTarget<String>(
+                onAcceptWithDetails: (details) {
+                  _onDeviceSelected(index, details.data, details.data);
+                },
+                builder: (context, candidateData, rejectedData) {
+                  final isDragOver = candidateData.isNotEmpty;
+                  return GestureDetector(
+                    onSecondaryTapUp: (details) {
+                      _showCellContextMenu(
+                          context, index, cell, details.globalPosition);
+                    },
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 150),
+                      decoration: isDragOver
+                          ? BoxDecoration(
+                              border: Border.all(
+                                  color: StudioTheme.accentCyan, width: 2),
+                              borderRadius: BorderRadius.circular(4),
+                            )
+                          : null,
+                      child: _buildCellContent(
+                          index, cell, isConnecting, isConnected),
+                    ),
+                  );
+                },
+              );
+            });
           },
         ),
       );
@@ -295,15 +217,12 @@ class _ScreenWallPageState extends State<ScreenWallPage> {
       int index, ScreenWallCell cell, bool isConnecting, bool isConnected) {
     // Show remote view for connected sessions
     if (isConnected && cell.peerId != null) {
-      final key = _getRemoteKey(index);
       return Stack(
         children: [
           ClipRRect(
             borderRadius: BorderRadius.circular(4),
             child: WallRemoteView(
-              key: key,
-              peerId: cell.peerId!,
-              peerName: cell.peerName ?? cell.peerId!,
+              session: controller.sessionManager.getSession(index)!,
               onDoubleClick: () => _enterFullscreen(index),
             ),
           ),
@@ -398,47 +317,5 @@ class _ScreenWallPageState extends State<ScreenWallPage> {
           break;
       }
     });
-  }
-
-  Widget _buildStatusBar() {
-    return Container(
-      height: 24,
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      decoration: const BoxDecoration(
-        color: StudioTheme.toolbarBg,
-        border: Border(top: BorderSide(color: StudioTheme.border, width: 1)),
-      ),
-      child: Obx(() {
-        final sel = controller.selectedIndex.value;
-        final selCell = sel >= 0 && sel < controller.cells.length
-            ? controller.cells[sel]
-            : null;
-        final connected = controller.sessionManager.connectedCount;
-        return Row(
-          children: [
-            Text(
-              '连接: $connected',
-              style: const TextStyle(color: StudioTheme.textHint, fontSize: 11),
-            ),
-            const SizedBox(width: 8),
-            Text(
-              '布局: ${controller.gridColumns}×${controller.gridColumns}',
-              style: const TextStyle(color: StudioTheme.textHint, fontSize: 11),
-            ),
-            const SizedBox(width: 16),
-            if (selCell != null && !selCell.isEmpty)
-              Text(
-                '选中: ${selCell.peerName ?? selCell.peerId ?? ""}',
-                style: const TextStyle(color: StudioTheme.accentCyan, fontSize: 11),
-              ),
-            const Spacer(),
-            const Text(
-              'Ctrl+1~4 切换布局 | Del 断开 | F11 全屏',
-              style: TextStyle(color: StudioTheme.textHint, fontSize: 10),
-            ),
-          ],
-        );
-      }),
-    );
   }
 }

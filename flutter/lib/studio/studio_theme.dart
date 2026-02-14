@@ -40,5 +40,18 @@ class StudioTheme {
   static const Color btnTextIdle = Color(0x8AFFFFFF);    // ~Colors.white54
   static const Color hoverOverlay = Color(0x14FFFFFF);   // ~Colors.white.withOpacity(0.08)
 
+  // ── 布局常量 ──
+  static const Duration connectionTimeout = Duration(seconds: 30);
+  static const int maxConcurrentConnections = 16;
+  static const double toolbarHeight = 48.0;
+  static const double statusBarHeight = 24.0;
+  static const double gridSpacing = 2.0;
+  static const double dialogWidth = 400.0;
+  static const double dialogHeight = 500.0;
+  static const double navSidebarWidth = 60.0;
+  static const double middlePanelWidth = 250.0;
+  static const double defaultWidth = 1920.0;
+  static const double defaultHeight = 1080.0;
+
   StudioTheme._();
 }

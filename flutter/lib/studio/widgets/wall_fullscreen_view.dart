@@ -1,29 +1,25 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
-import 'package:provider/provider.dart';
 
 import '../../common.dart';
-import '../../consts.dart';
 import '../../models/model.dart';
+import '../models/screen_wall_session.dart';
 import '../studio_theme.dart';
-import 'wall_remote_view.dart';
+import 'wall_texture_renderer.dart';
 
 /// Fullscreen overlay for a single remote desktop cell in the screen wall.
 ///
 /// Shows the remote desktop texture at full size with additional info
 /// (peer ID, connection duration, quality) and optional input forwarding.
+/// Receives a [ScreenWallSession] directly — no GlobalKey dependency.
 class WallFullscreenView extends StatefulWidget {
-  final WallRemoteViewState remoteViewState;
-  final String peerId;
-  final String peerName;
+  final ScreenWallSession session;
   final VoidCallback onExit;
 
   const WallFullscreenView({
     Key? key,
-    required this.remoteViewState,
-    required this.peerId,
-    required this.peerName,
+    required this.session,
     required this.onExit,
   }) : super(key: key);
 
@@ -34,10 +30,9 @@ class WallFullscreenView extends StatefulWidget {
 class _WallFullscreenViewState extends State<WallFullscreenView> {
   final _showToolbar = true.obs;
   final _inputEnabled = false.obs;
-  final _connectedAt = DateTime.now();
   final FocusNode _focusNode = FocusNode(debugLabel: 'wallFullscreen');
 
-  FFI get _ffi => widget.remoteViewState.ffi;
+  FFI get _ffi => widget.session.ffi!;
 
   @override
   void initState() {
@@ -47,8 +42,20 @@ class _WallFullscreenViewState extends State<WallFullscreenView> {
 
   @override
   void dispose() {
+    // Restore view-only if input was enabled during fullscreen.
+    if (_inputEnabled.isTrue) {
+      _toggleViewOnly();
+    }
     _focusNode.dispose();
     super.dispose();
+  }
+
+  /// Toggle the view-only session option via FFI.
+  void _toggleViewOnly() {
+    final sid = widget.session.sessionId;
+    if (sid != null) {
+      bind.sessionToggleOption(sessionId: sid, value: 'view-only');
+    }
   }
 
   String _formatDuration(Duration d) {
@@ -78,7 +85,7 @@ class _WallFullscreenViewState extends State<WallFullscreenView> {
             GestureDetector(
               onDoubleTap: widget.onExit,
               onTap: () => _showToolbar.toggle(),
-              child: _buildTextureView(),
+              child: WallTextureRenderer(ffi: _ffi),
             ),
             // Top info bar
             Obx(() => _showToolbar.isTrue
@@ -94,56 +101,11 @@ class _WallFullscreenViewState extends State<WallFullscreenView> {
     );
   }
 
-  Widget _buildTextureView() {
-    return ChangeNotifierProvider.value(
-      value: _ffi.ffiModel,
-      child: Consumer<FfiModel>(
-        builder: (context, ffiModel, _) {
-          if (ffiModel.pi.isSet.isFalse ||
-              ffiModel.waitForFirstImage.isTrue) {
-            return const Center(
-              child: CircularProgressIndicator(
-                color: StudioTheme.accentCyan,
-              ),
-            );
-          }
-
-          final curDisplay = ffiModel.pi.currentDisplay;
-          final displays = ffiModel.pi.getCurDisplays();
-          if (displays.isEmpty) return const SizedBox.shrink();
-
-          _ffi.textureModel.updateCurrentDisplay(curDisplay);
-          final displayIndex =
-              curDisplay == kAllDisplayValue ? 0 : curDisplay;
-          final textureId = _ffi.textureModel.getTextureId(displayIndex);
-
-          return Obx(() {
-            if (textureId.value == -1) {
-              return const Center(
-                child: CircularProgressIndicator(
-                  color: StudioTheme.accentCyan,
-                ),
-              );
-            }
-            return FittedBox(
-              fit: BoxFit.contain,
-              child: SizedBox(
-                width: displays[0].width.toDouble(),
-                height: displays[0].height.toDouble(),
-                child: Texture(
-                  textureId: textureId.value,
-                  filterQuality: FilterQuality.low,
-                ),
-              ),
-            );
-          });
-        },
-      ),
-    );
-  }
-
   Widget _buildTopBar() {
-    final elapsed = DateTime.now().difference(_connectedAt);
+    final connectedAt = widget.session.connectedAt;
+    final elapsed = connectedAt != null
+        ? DateTime.now().difference(connectedAt)
+        : Duration.zero;
     return Positioned(
       top: 0,
       left: 0,
@@ -162,7 +124,7 @@ class _WallFullscreenViewState extends State<WallFullscreenView> {
             const Icon(Icons.desktop_windows, color: StudioTheme.accentCyan, size: 16),
             const SizedBox(width: 8),
             Text(
-              widget.peerName,
+              widget.session.peerName,
               style: const TextStyle(
                 color: StudioTheme.textPrimary,
                 fontSize: 13,
@@ -171,7 +133,7 @@ class _WallFullscreenViewState extends State<WallFullscreenView> {
             ),
             const SizedBox(width: 12),
             Text(
-              'ID: ${widget.peerId}',
+              'ID: ${widget.session.peerId}',
               style: const TextStyle(
                 color: StudioTheme.textSecondary,
                 fontSize: 11,
@@ -223,13 +185,16 @@ class _WallFullscreenViewState extends State<WallFullscreenView> {
                       : Icons.mouse_outlined,
                   label: _inputEnabled.isTrue ? '输入已启用' : '启用输入',
                   active: _inputEnabled.isTrue,
-                  onTap: () => _inputEnabled.toggle(),
+                  onTap: () {
+                    _toggleViewOnly();
+                    _inputEnabled.toggle();
+                  },
                 )),
             const SizedBox(width: 16),
             _toolbarButton(
               icon: Icons.refresh,
               label: '刷新',
-              onTap: () => widget.remoteViewState.reconnect(),
+              onTap: () => widget.session.reconnect(),
             ),
           ],
         ),

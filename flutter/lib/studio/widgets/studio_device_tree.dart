@@ -1,111 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
-import '../../common.dart';
-import '../../models/peer_model.dart';
-import '../../models/platform_model.dart';
 import '../models/device_group.dart';
+import '../models/device_tree_controller.dart';
 import '../studio_theme.dart';
-
-class StudioDeviceTreeController extends GetxController {
-  final selectedGroupId = 'all'.obs;
-  final expandedGroups = <String>{}.obs;
-  final searchText = ''.obs;
-  final multiSelectMode = false.obs;
-  final selectedPeerIds = <String>{}.obs;
-  final groups = <DeviceGroup>[].obs;
-
-  @override
-  void onInit() {
-    super.onInit();
-    refreshPeers();
-  }
-
-  /// Call this to refresh the device tree from real peer data.
-  void refreshPeers() {
-    final allPeers = <Peer>[];
-    final seenIds = <String>{};
-
-    void addUnique(List<Peer> source) {
-      for (final p in source) {
-        if (p.id.isNotEmpty && seenIds.add(p.id)) {
-          allPeers.add(p);
-        }
-      }
-    }
-
-    addUnique(gFFI.recentPeersModel.peers);
-    addUnique(gFFI.favoritePeersModel.peers);
-    addUnique(gFFI.lanPeersModel.peers);
-
-    // Trigger loads so data stays fresh
-    bind.mainLoadRecentPeers();
-    bind.mainLoadFavPeers();
-    bind.mainLoadLanPeers();
-
-    final onlineCount = allPeers.where((p) => p.online).length;
-    final totalCount = allPeers.length;
-
-    // Build recent peers group
-    final recentPeers = gFFI.recentPeersModel.peers;
-    final recentOnline = recentPeers.where((p) => p.online).length;
-
-    // Build favorite peers group
-    final favPeers = gFFI.favoritePeersModel.peers;
-    final favOnline = favPeers.where((p) => p.online).length;
-
-    // Build LAN peers group
-    final lanPeers = gFFI.lanPeersModel.peers;
-    final lanOnline = lanPeers.where((p) => p.online).length;
-
-    groups.value = [
-      DeviceGroup(
-        id: 'all',
-        name: '全部设备',
-        icon: Icons.devices,
-        onlineCount: onlineCount,
-        totalCount: totalCount,
-        peerIds: allPeers.map((p) => p.id).toList(),
-      ),
-      DeviceGroup(
-        id: 'online',
-        name: '在线设备',
-        icon: Icons.wifi,
-        color: StudioTheme.accentGreen,
-        onlineCount: onlineCount,
-        totalCount: onlineCount,
-        peerIds: allPeers.where((p) => p.online).map((p) => p.id).toList(),
-      ),
-      DeviceGroup(
-        id: 'recent',
-        name: '最近连接',
-        icon: Icons.history,
-        color: StudioTheme.accentBlue,
-        onlineCount: recentOnline,
-        totalCount: recentPeers.length,
-        peerIds: recentPeers.map((p) => p.id).toList(),
-      ),
-      DeviceGroup(
-        id: 'favorites',
-        name: '收藏设备',
-        icon: Icons.star,
-        color: StudioTheme.accentOrange,
-        onlineCount: favOnline,
-        totalCount: favPeers.length,
-        peerIds: favPeers.map((p) => p.id).toList(),
-      ),
-      DeviceGroup(
-        id: 'lan',
-        name: '局域网发现',
-        icon: Icons.lan,
-        color: StudioTheme.accentCyan,
-        onlineCount: lanOnline,
-        totalCount: lanPeers.length,
-        peerIds: lanPeers.map((p) => p.id).toList(),
-      ),
-    ];
-  }
-}
 
 class StudioDeviceTree extends StatefulWidget {
   final ValueChanged<String>? onGroupSelected;
@@ -129,6 +27,7 @@ class _StudioDeviceTreeState extends State<StudioDeviceTree> {
   @override
   void dispose() {
     _searchController.dispose();
+    Get.delete<StudioDeviceTreeController>();
     super.dispose();
   }
 
@@ -286,8 +185,7 @@ class _StudioDeviceTreeState extends State<StudioDeviceTree> {
 
   void _buildNodes(
       DeviceGroup group, int depth, String query, List<Widget> nodes) {
-    final matchesSearch =
-        query.isEmpty || group.name.toLowerCase().contains(query);
+    final matchesSearch = _ctrl.groupMatchesSearch(group, query);
     if (!matchesSearch && group.children.isEmpty) return;
 
     if (matchesSearch) {

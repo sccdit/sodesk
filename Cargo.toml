@@ -41,6 +41,11 @@ unix-file-copy-paste = [
     "clipboard/unix-file-copy-paste",
 ]
 screencapturekit = ["cpal/screencapturekit"]
+# ===== SoDesk Studio Hook =====
+studio = []
+studio-screen-wall = ["studio"]
+studio-bg-input = ["studio"]
+# ===== End SoDesk Studio Hook =====
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

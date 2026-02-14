@@ -3,7 +3,7 @@ import 'package:get/get.dart';
 
 import '../../common.dart';
 import '../../models/peer_model.dart';
-import '../../models/platform_model.dart';
+import '../models/studio_peer_service.dart';
 import '../studio_theme.dart';
 
 /// Shows the device picker dialog and returns (peerId, peerName) or null.
@@ -50,34 +50,11 @@ class _DevicePickerDialogState extends State<DevicePickerDialog> {
   Future<void> _loadPeers() async {
     _loading.value = true;
     try {
-      final allPeers = <Peer>[];
-      final seenIds = <String>{};
-
-      // Collect from recent peers
-      _addPeers(allPeers, seenIds, gFFI.recentPeersModel.peers);
-      // Collect from favorite peers
-      _addPeers(allPeers, seenIds, gFFI.favoritePeersModel.peers);
-      // Collect from LAN peers
-      _addPeers(allPeers, seenIds, gFFI.lanPeersModel.peers);
-
-      // Trigger loads to refresh data
-      bind.mainLoadRecentPeers();
-      bind.mainLoadFavPeers();
-      bind.mainLoadLanPeers();
-
-      _peers.value = allPeers;
+      _peers.value = StudioPeerService.loadPeers();
     } catch (e) {
       debugPrint('DevicePickerDialog._loadPeers error: $e');
     }
     _loading.value = false;
-  }
-
-  void _addPeers(List<Peer> dest, Set<String> seenIds, List<Peer> source) {
-    for (final p in source) {
-      if (p.id.isNotEmpty && seenIds.add(p.id)) {
-        dest.add(p);
-      }
-    }
   }
 
   List<Peer> get _filteredPeers {
@@ -107,8 +84,8 @@ class _DevicePickerDialogState extends State<DevicePickerDialog> {
         side: const BorderSide(color: StudioTheme.border),
       ),
       child: SizedBox(
-        width: 400,
-        height: 500,
+        width: StudioTheme.dialogWidth,
+        height: StudioTheme.dialogHeight,
         child: Column(
           children: [
             _buildHeader(),

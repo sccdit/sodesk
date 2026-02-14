@@ -77,3 +77,8 @@ pub mod privacy_mode;
 pub mod virtual_display_manager;
 
 mod kcp_stream;
+
+// ===== SoDesk Studio Hook =====
+#[cfg(feature = "studio")]
+mod studio;
+// ===== End SoDesk Studio Hook =====

@@ -7,6 +7,7 @@ import 'package:uuid/uuid.dart';
 import '../../common.dart';
 import '../../models/model.dart';
 import '../../models/platform_model.dart';
+import '../studio_theme.dart';
 
 /// Connection state for a single screen wall cell.
 enum WallSessionState { disconnected, connecting, connected, error }
@@ -22,6 +23,7 @@ class ScreenWallSession {
   FFI? ffi;
   SessionID? sessionId;
   String? errorMessage;
+  DateTime? connectedAt;
   Timer? _connectTimer;
 
   ScreenWallSession({
@@ -55,6 +57,7 @@ class ScreenWallSession {
       // Listen for the first image to confirm connection success.
       ffiInstance.imageModel.addCallbackOnFirstImage((String id) {
         if (state.value == WallSessionState.connecting) {
+          connectedAt = DateTime.now();
           state.value = WallSessionState.connected;
           debugPrint('[ScreenWall] Cell $cellIndex connected to $peerId');
         }
@@ -62,7 +65,7 @@ class ScreenWallSession {
 
       // Set a cancellable timeout — if no image arrives within 30s, mark as error.
       _connectTimer?.cancel();
-      _connectTimer = Timer(const Duration(seconds: 30), () {
+      _connectTimer = Timer(StudioTheme.connectionTimeout, () {
         if (state.value == WallSessionState.connecting) {
           state.value = WallSessionState.error;
           errorMessage = 'Connection timeout';
@@ -89,6 +92,7 @@ class ScreenWallSession {
       ffi = null;
     }
     sessionId = null;
+    connectedAt = null;
     state.value = WallSessionState.disconnected;
     errorMessage = null;
   }
@@ -105,7 +109,7 @@ class ScreenWallSessionManager extends GetxController {
   final sessions = <int, ScreenWallSession>{}.obs;
   final int maxConcurrent;
 
-  ScreenWallSessionManager({this.maxConcurrent = 16});
+  ScreenWallSessionManager({this.maxConcurrent = StudioTheme.maxConcurrentConnections});
 
   /// Connect a cell to a remote peer.
   Future<void> connectCell(int cellIndex, String peerId,

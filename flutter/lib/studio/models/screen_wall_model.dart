@@ -8,13 +8,11 @@ class ScreenWallCell {
   final String? peerId;
   final String? peerName;
   final bool isConnected;
-  final bool isSelected;
 
   const ScreenWallCell({
     this.peerId,
     this.peerName,
     this.isConnected = false,
-    this.isSelected = false,
   });
 
   bool get isEmpty => peerId == null;
@@ -23,14 +21,12 @@ class ScreenWallCell {
     String? peerId,
     String? peerName,
     bool? isConnected,
-    bool? isSelected,
     bool clearPeer = false,
   }) {
     return ScreenWallCell(
       peerId: clearPeer ? null : (peerId ?? this.peerId),
       peerName: clearPeer ? null : (peerName ?? this.peerName),
       isConnected: isConnected ?? this.isConnected,
-      isSelected: isSelected ?? this.isSelected,
     );
   }
 }
@@ -41,6 +37,8 @@ class ScreenWallController extends GetxController {
   final selectedIndex = (-1).obs;
   late final ScreenWallSessionManager sessionManager;
   final _cellWorkers = <int, Worker>{};
+  final connectedPeerIds = <String>{}.obs;
+  Worker? _peerIdWorker;
 
   int get gridColumns {
     switch (layout.value) {
@@ -67,15 +65,25 @@ class ScreenWallController extends GetxController {
     super.onInit();
     sessionManager = Get.put(ScreenWallSessionManager());
     _rebuildGrid();
+    _peerIdWorker = ever(cells, (_) => _refreshConnectedPeerIds());
+  }
+
+  void _refreshConnectedPeerIds() {
+    connectedPeerIds.value = cells
+        .where((c) => !c.isEmpty)
+        .map((c) => c.peerId!)
+        .toSet();
   }
 
   @override
   void onClose() {
+    _peerIdWorker?.dispose();
     for (final w in _cellWorkers.values) {
       w.dispose();
     }
     _cellWorkers.clear();
     sessionManager.disconnectAll();
+    Get.delete<ScreenWallSessionManager>();
     super.onClose();
   }
 
@@ -135,16 +143,11 @@ class ScreenWallController extends GetxController {
 
   void selectCell(int index) {
     if (index < 0 || index >= cells.length) return;
-    final prev = selectedIndex.value;
-    if (prev >= 0 && prev < cells.length) {
-      cells[prev] = cells[prev].copyWith(isSelected: false);
-    }
-    if (prev == index) {
+    if (selectedIndex.value == index) {
       selectedIndex.value = -1;
       return;
     }
     selectedIndex.value = index;
-    cells[index] = cells[index].copyWith(isSelected: true);
   }
 
   void setLayout(WallLayout newLayout) {
@@ -154,6 +157,10 @@ class ScreenWallController extends GetxController {
 
   Future<void> clearAll() async {
     selectedIndex.value = -1;
+    for (final w in _cellWorkers.values) {
+      w.dispose();
+    }
+    _cellWorkers.clear();
     await sessionManager.disconnectAll();
     for (var i = 0; i < cells.length; i++) {
       cells[i] = const ScreenWallCell();
@@ -162,6 +169,10 @@ class ScreenWallController extends GetxController {
 
   Future<void> disconnectAll() async {
     selectedIndex.value = -1;
+    for (final w in _cellWorkers.values) {
+      w.dispose();
+    }
+    _cellWorkers.clear();
     await sessionManager.disconnectAll();
     for (var i = 0; i < cells.length; i++) {
       if (!cells[i].isEmpty) {

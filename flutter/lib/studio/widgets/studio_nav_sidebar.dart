@@ -41,7 +41,7 @@ class StudioNavSidebar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 60,
+      width: StudioTheme.navSidebarWidth,
       color: StudioTheme.navBarBg,
       child: Column(
         children: [
@@ -92,7 +92,7 @@ class StudioNavSidebar extends StatelessWidget {
                     selected: selected,
                     onlineCount: onlineDeviceCount,
                   )
-                : _NavButtonBody(
+                : _NavButton(
                     icon: item.icon,
                     selected: selected,
                   ),
@@ -111,7 +111,7 @@ class StudioNavSidebar extends StatelessWidget {
         onTap: () => onNavChanged(navQuickAction),
         child: MouseRegion(
           cursor: SystemMouseCursors.click,
-          child: const _NavButtonBody(
+          child: const _NavButton(
             icon: Icons.power_settings_new,
             selected: false,
           ),
@@ -121,98 +121,18 @@ class StudioNavSidebar extends StatelessWidget {
   }
 }
 
-class _DevicesNavButton extends StatefulWidget {
-  final IconData icon;
-  final bool selected;
-  final RxInt onlineCount;
-
-  const _DevicesNavButton({
-    required this.icon,
-    required this.selected,
-    required this.onlineCount,
-  });
-
-  @override
-  State<_DevicesNavButton> createState() => _DevicesNavButtonState();
-}
-
-class _DevicesNavButtonState extends State<_DevicesNavButton> {
-  bool _hovering = false;
-
-  @override
-  Widget build(BuildContext context) {
-    Color bg;
-    Color iconColor;
-    if (widget.selected) {
-      bg = StudioTheme.accentBlue;
-      iconColor = StudioTheme.textPrimary;
-    } else if (_hovering) {
-      bg = StudioTheme.hoverOverlay;
-      iconColor = StudioTheme.textSecondary;
-    } else {
-      bg = Colors.transparent;
-      iconColor = StudioTheme.textSecondary;
-    }
-
-    return MouseRegion(
-      onEnter: (_) => setState(() => _hovering = true),
-      onExit: (_) => setState(() => _hovering = false),
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          Container(
-            width: 48,
-            height: 48,
-            margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 6),
-            decoration: BoxDecoration(
-              color: bg,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Icon(widget.icon, color: iconColor, size: 24),
-          ),
-          Positioned(
-            right: 2,
-            top: 0,
-            child: Obx(() {
-              final count = widget.onlineCount.value;
-              if (count <= 0) return const SizedBox.shrink();
-              return Container(
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                decoration: BoxDecoration(
-                  color: StudioTheme.accentGreen,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
-                child: Center(
-                  child: Text(
-                    count > 99 ? '99+' : '$count',
-                    style: const TextStyle(
-                      color: StudioTheme.textPrimary,
-                      fontSize: 9,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              );
-            }),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _NavButtonBody extends StatefulWidget {
+/// Shared nav button with hover state management.
+class _NavButton extends StatefulWidget {
   final IconData icon;
   final bool selected;
 
-  const _NavButtonBody({required this.icon, required this.selected});
+  const _NavButton({required this.icon, required this.selected});
 
   @override
-  State<_NavButtonBody> createState() => _NavButtonBodyState();
+  State<_NavButton> createState() => _NavButtonState();
 }
 
-class _NavButtonBodyState extends State<_NavButtonBody> {
+class _NavButtonState extends State<_NavButton> {
   bool _hovering = false;
 
   @override
@@ -243,6 +163,55 @@ class _NavButtonBodyState extends State<_NavButtonBody> {
         ),
         child: Icon(widget.icon, color: iconColor, size: 24),
       ),
+    );
+  }
+}
+
+/// Devices nav button — wraps [_NavButton] with an online count badge.
+class _DevicesNavButton extends StatelessWidget {
+  final IconData icon;
+  final bool selected;
+  final RxInt onlineCount;
+
+  const _DevicesNavButton({
+    required this.icon,
+    required this.selected,
+    required this.onlineCount,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        _NavButton(icon: icon, selected: selected),
+        Positioned(
+          right: 2,
+          top: 0,
+          child: Obx(() {
+            final count = onlineCount.value;
+            if (count <= 0) return const SizedBox.shrink();
+            return Container(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+              decoration: BoxDecoration(
+                color: StudioTheme.accentGreen,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+              child: Center(
+                child: Text(
+                  count > 99 ? '99+' : '$count',
+                  style: const TextStyle(
+                    color: StudioTheme.textPrimary,
+                    fontSize: 9,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            );
+          }),
+        ),
+      ],
     );
   }
 }

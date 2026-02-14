@@ -214,7 +214,7 @@ class _StudioHomePageState extends State<StudioHomePage>
           StudioNavSidebar(onNavChanged: (i) => _navIndex.value = i),
           VerticalDivider(width: 1, color: StudioTheme.divider),
           SizedBox(
-            width: 250,
+            width: StudioTheme.middlePanelWidth,
             child: Obx(() => _buildCenterPanel()),
           ),
           VerticalDivider(width: 1, color: StudioTheme.divider),
